@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"html/template"
 	"os"
 	"strconv"
 	"strings"
@@ -11,7 +12,7 @@ import (
 )
 
 // CONFIGURATION
-var mode = ANSI
+var mode = HTML
 
 const (
 	Gray   = "\033[90m"
@@ -158,8 +159,8 @@ func main() {
 	}
 
 	numsCol := []string{""}
-	leftCol := []string{mode.pre + os.Args[1] + mode.post}
-	rightCol := []string{mode.pre + os.Args[2] + mode.post}
+	leftCol := []string{os.Args[1]}
+	rightCol := []string{os.Args[2]}
 
 	for i := range len(lines1) {
 		num, left, right := getRow(i, lines1[i], lines2[i], mode)
@@ -189,14 +190,22 @@ func writeAnsi(numsCol, leftCol, rightCol []string) {
 }
 
 func writeHTML(leftCol, rightCol []string) {
-	for _, col := range [][]string{leftCol, rightCol} {
-		fmt.Print(`<div style="white-space: pre-line">`)
+	entries := make([]htmlEntry, 2)
+	entries[0].Title = leftCol[0]
+	entries[1].Title = rightCol[0]
+	for i, col := range [][]string{leftCol, rightCol} {
+		var b strings.Builder
+		b.WriteString(`<div style="white-space: pre-line">`)
+
 		col = col[1:] // remove header
 		for _, s := range col {
-			fmt.Println(s)
+			fmt.Fprintln(&b, s)
 		}
-		fmt.Println(`</div>`)
+		b.WriteString(`</div>`)
+
+		entries[i].Text = template.HTML(b.String())
 	}
+	renderHTML(entries, os.Stdout)
 }
 
 // pad to visual width; see [lipgloss.Width].
