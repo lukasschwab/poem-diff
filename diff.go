@@ -93,20 +93,46 @@ func getRow(lineNum int, aLine, bLine string, b Mode) (string, string, string) {
 	leftBuilder, rightBuilder := strings.Builder{}, strings.Builder{}
 
 	aligned := alignTokens(aLine, bLine)
+	mismatchedLeft, mismatchedRight := strings.Builder{}, strings.Builder{}
 	for _, pair := range aligned {
 		left, right := pair[0], pair[1]
 
 		if left == right {
+			// Flush mismatched tokens before adding matched tokens
+			if mismatchedLeft.Len() > 0 {
+				leftBuilder.WriteString(b.pre + mismatchedLeft.String() + b.post + " ")
+				mismatchedLeft.Reset()
+			}
+			if mismatchedRight.Len() > 0 {
+				rightBuilder.WriteString(b.pre + mismatchedRight.String() + b.post + " ")
+				mismatchedRight.Reset()
+			}
+
 			leftBuilder.WriteString(left + " ")
 			rightBuilder.WriteString(right + " ")
 		} else {
+			// Accumulate mismatched tokens
 			if left != "" {
-				leftBuilder.WriteString(b.pre + left + b.post + " ")
+				if mismatchedLeft.Len() > 0 {
+					mismatchedLeft.WriteString(" ")
+				}
+				mismatchedLeft.WriteString(left)
 			}
 			if right != "" {
-				rightBuilder.WriteString(b.pre + right + b.post + " ")
+				if mismatchedRight.Len() > 0 {
+					mismatchedRight.WriteString(" ")
+				}
+				mismatchedRight.WriteString(right)
 			}
 		}
+	}
+
+	// Flush any remaining mismatched tokens
+	if mismatchedLeft.Len() > 0 {
+		leftBuilder.WriteString(b.pre + mismatchedLeft.String() + b.post + " ")
+	}
+	if mismatchedRight.Len() > 0 {
+		rightBuilder.WriteString(b.pre + mismatchedRight.String() + b.post + " ")
 	}
 
 	return Gray + strconv.Itoa(lineNum+1) + Reset, leftBuilder.String(), rightBuilder.String()
@@ -145,16 +171,14 @@ func main() {
 	switch mode {
 	case ANSI:
 		writeAnsi(numsCol, leftCol, rightCol)
+		return
 	case HTML:
 		writeHTML(leftCol, rightCol)
+		return
 	}
 }
 
 func writeAnsi(numsCol, leftCol, rightCol []string) {
-	for i := range numsCol {
-		fmt.Print(numsCol[i], "\t", leftCol[i], "\t", rightCol[i], "\n")
-	}
-
 	pad(numsCol)
 	pad(leftCol)
 	pad(rightCol)
@@ -166,7 +190,7 @@ func writeAnsi(numsCol, leftCol, rightCol []string) {
 
 func writeHTML(leftCol, rightCol []string) {
 	for _, col := range [][]string{leftCol, rightCol} {
-		fmt.Println(`<div style="white-space: pre-line">`)
+		fmt.Print(`<div style="white-space: pre-line">`)
 		col = col[1:] // remove header
 		for _, s := range col {
 			fmt.Println(s)
