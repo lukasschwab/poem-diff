@@ -2,22 +2,16 @@ package main
 
 import (
 	"bufio"
-	"fmt"
-	"html/template"
+	"flag"
 	"os"
 	"strconv"
 	"strings"
-
-	"github.com/charmbracelet/lipgloss"
 )
 
-// CONFIGURATION
-var mode = HTML
-
 const (
-	Gray   = "\033[90m"
-	Yellow = "\033[33m"
-	Reset  = "\033[0m"
+	ANSIGray   = "\033[90m"
+	ANSIYellow = "\033[33m"
+	ANSIReset  = "\033[0m"
 )
 
 type Mode struct {
@@ -26,7 +20,7 @@ type Mode struct {
 }
 
 var (
-	ANSI Mode = Mode{Yellow, Reset}
+	ANSI Mode = Mode{ANSIYellow, ANSIReset}
 	HTML Mode = Mode{`<span class="poem-diff">`, "</span>"}
 )
 
@@ -45,6 +39,8 @@ func readLines(filename string) ([]string, error) {
 	return lines, scanner.Err()
 }
 
+// WARNING: this is a LLM-generated implementation of the LCS algorithm at the
+// token level. It might suck, but I'm only dealing with ~hundreds of tokens.
 func alignTokens(a, b string) [][2]string {
 	aTokens := strings.Fields(a)
 	bTokens := strings.Fields(b)
@@ -90,7 +86,15 @@ func alignTokens(a, b string) [][2]string {
 	return aligned
 }
 
-func getRow(lineNum int, aLine, bLine string, b Mode) (string, string, string) {
+// WARNING: this is LLM-generated code.
+//
+// getRow returns the line number and formats the left/right texts, inserting
+// markers (specified by mode) before and after serieses of mismatched tokens.
+//
+// It may be unnecessarily complex, since those spans cover different sets of
+// tokens on the left and right sides. The space-appending is weird to avoid
+// including spaces in those mismatch spans.
+func getRow(lineNum int, aLine, bLine string, mode Mode) (string, string, string) {
 	leftBuilder, rightBuilder := strings.Builder{}, strings.Builder{}
 
 	aligned := alignTokens(aLine, bLine)
@@ -101,11 +105,11 @@ func getRow(lineNum int, aLine, bLine string, b Mode) (string, string, string) {
 		if left == right {
 			// Flush mismatched tokens before adding matched tokens
 			if mismatchedLeft.Len() > 0 {
-				leftBuilder.WriteString(b.pre + mismatchedLeft.String() + b.post + " ")
+				leftBuilder.WriteString(mode.pre + mismatchedLeft.String() + mode.post + " ")
 				mismatchedLeft.Reset()
 			}
 			if mismatchedRight.Len() > 0 {
-				rightBuilder.WriteString(b.pre + mismatchedRight.String() + b.post + " ")
+				rightBuilder.WriteString(mode.pre + mismatchedRight.String() + mode.post + " ")
 				mismatchedRight.Reset()
 			}
 
@@ -130,26 +134,30 @@ func getRow(lineNum int, aLine, bLine string, b Mode) (string, string, string) {
 
 	// Flush any remaining mismatched tokens
 	if mismatchedLeft.Len() > 0 {
-		leftBuilder.WriteString(b.pre + mismatchedLeft.String() + b.post + " ")
+		leftBuilder.WriteString(mode.pre + mismatchedLeft.String() + mode.post + " ")
 	}
 	if mismatchedRight.Len() > 0 {
-		rightBuilder.WriteString(b.pre + mismatchedRight.String() + b.post + " ")
+		rightBuilder.WriteString(mode.pre + mismatchedRight.String() + mode.post + " ")
 	}
 
-	return Gray + strconv.Itoa(lineNum+1) + Reset, leftBuilder.String(), rightBuilder.String()
+	return ANSIGray + strconv.Itoa(lineNum+1) + ANSIReset, leftBuilder.String(), rightBuilder.String()
 }
 
 func main() {
-	if len(os.Args) < 3 {
-		fmt.Println("Usage: go run diff.go file1.txt file2.txt")
-		os.Exit(1)
+	left := flag.String("left", "", "Path to the left file")
+	right := flag.String("right", "", "Path to the right file")
+	format := flag.String("format", "ansi", "Output format: 'ansi' or 'html'")
+	flag.Parse()
+
+	if left == nil || right == nil || *left == "" || *right == "" {
+		panic("specify files --left and --right")
 	}
 
-	lines1, err := readLines(os.Args[1])
+	lines1, err := readLines(*left)
 	if err != nil {
 		panic(err)
 	}
-	lines2, err := readLines(os.Args[2])
+	lines2, err := readLines(*right)
 	if err != nil {
 		panic(err)
 	}
@@ -158,11 +166,22 @@ func main() {
 		panic("unhandled length mismatch")
 	}
 
-	numsCol := []string{""}
-	leftCol := []string{os.Args[1]}
-	rightCol := []string{os.Args[2]}
+	mode := ANSI
+	if format != nil {
+		switch *format {
+		case "ansi":
+			mode = ANSI
+		case "html":
+			mode = HTML
+		default:
+			panic("Invalid format. Use 'ansi' or 'html'")
+		}
+	}
 
-	for i := range len(lines1) {
+	numsCol := []string{""}
+	leftCol := []string{*left}
+	rightCol := []string{*right}
+	for i := range lines1 {
 		num, left, right := getRow(i, lines1[i], lines2[i], mode)
 		numsCol = append(numsCol, num)
 		leftCol = append(leftCol, left)
@@ -172,55 +191,7 @@ func main() {
 	switch mode {
 	case ANSI:
 		writeAnsi(numsCol, leftCol, rightCol)
-		return
 	case HTML:
 		writeHTML(leftCol, rightCol)
-		return
-	}
-}
-
-func writeAnsi(numsCol, leftCol, rightCol []string) {
-	pad(numsCol)
-	pad(leftCol)
-	pad(rightCol)
-
-	for i := range numsCol {
-		fmt.Print(Gray, numsCol[i], Reset, "\t", leftCol[i], "\t", rightCol[i], "\n")
-	}
-}
-
-func writeHTML(leftCol, rightCol []string) {
-	entries := make([]htmlEntry, 2)
-	entries[0].Title = leftCol[0]
-	entries[1].Title = rightCol[0]
-	for i, col := range [][]string{leftCol, rightCol} {
-		var b strings.Builder
-		b.WriteString(`<div style="white-space: pre-line">`)
-
-		col = col[1:] // remove header
-		for _, s := range col {
-			fmt.Fprintln(&b, s)
-		}
-		b.WriteString(`</div>`)
-
-		entries[i].Text = template.HTML(b.String())
-	}
-	renderHTML(entries, os.Stdout)
-}
-
-// pad to visual width; see [lipgloss.Width].
-func pad(col []string) {
-	max := 0
-	for _, s := range col {
-		if lipgloss.Width(s) > max {
-			max = lipgloss.Width(s)
-		}
-	}
-
-	for i, s := range col {
-		padding := max - lipgloss.Width(s)
-		if padding > 0 {
-			col[i] += strings.Repeat(" ", padding)
-		}
 	}
 }
