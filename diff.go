@@ -4,10 +4,14 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 const (
+	Gray   = "\033[90m"
 	Yellow = "\033[33m"
 	Reset  = "\033[0m"
 )
@@ -27,7 +31,6 @@ func readLines(filename string) ([]string, error) {
 	return lines, scanner.Err()
 }
 
-// TODO: slop?
 func alignTokens(a, b string) [][2]string {
 	aTokens := strings.Fields(a)
 	bTokens := strings.Fields(b)
@@ -73,9 +76,7 @@ func alignTokens(a, b string) [][2]string {
 	return aligned
 }
 
-func printAlignedTokens(lineNum int, aLine, bLine string) {
-	fmt.Printf("%d:\t", lineNum+1)
-
+func getRow(lineNum int, aLine, bLine string) (string, string, string) {
 	leftBuilder, rightBuilder := strings.Builder{}, strings.Builder{}
 
 	aligned := alignTokens(aLine, bLine)
@@ -95,7 +96,7 @@ func printAlignedTokens(lineNum int, aLine, bLine string) {
 		}
 	}
 
-	fmt.Print(leftBuilder.String(), "\t", rightBuilder.String(), "\n")
+	return Gray + strconv.Itoa(lineNum+1) + Reset, leftBuilder.String(), rightBuilder.String()
 }
 
 func main() {
@@ -113,34 +114,43 @@ func main() {
 		panic(err)
 	}
 
-	longestLeft := 0
-	for _, line := range lines1 {
-		if longestLeft < len(line) {
-			longestLeft = len(line)
+	if len(lines1) != len(lines2) {
+		panic("unhandled length mismatch")
+	}
+
+	numsCol := []string{""}
+	leftCol := []string{Gray + os.Args[1] + Reset}
+	rightCol := []string{Gray + os.Args[2] + Reset}
+
+	for i := range len(lines1) {
+		num, left, right := getRow(i, lines1[i], lines2[i])
+		numsCol = append(numsCol, num)
+		leftCol = append(leftCol, left)
+		rightCol = append(rightCol, right)
+	}
+
+	pad(numsCol)
+	pad(leftCol)
+	pad(rightCol)
+
+	for i := range numsCol {
+		fmt.Print(Gray, numsCol[i], Reset, "\t", leftCol[i], "\t", rightCol[i], "\n")
+	}
+}
+
+// pad to visual width; see [lipgloss.Width].
+func pad(col []string) {
+	max := 0
+	for _, s := range col {
+		if lipgloss.Width(s) > max {
+			max = lipgloss.Width(s)
 		}
 	}
 
-	maxLines := len(lines1)
-	if len(lines2) > maxLines {
-		maxLines = len(lines2)
-	}
-
-	// TODO: figure out padding
-	fmt.Print("\t", os.Args[1], "\t", os.Args[2], "\n")
-
-	for i := 0; i < maxLines; i++ {
-		var l1, l2 string
-		if i < len(lines1) {
-			l1 = lines1[i]
+	for i, s := range col {
+		padding := max - lipgloss.Width(s)
+		if padding > 0 {
+			col[i] += strings.Repeat(" ", padding)
 		}
-		if i < len(lines2) {
-			l2 = lines2[i]
-		}
-
-		if l1 == l2 {
-			continue
-		}
-
-		printAlignedTokens(i, l1, l2)
 	}
 }
