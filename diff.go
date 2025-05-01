@@ -10,10 +10,23 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// CONFIGURATION
+var mode = ANSI
+
 const (
 	Gray   = "\033[90m"
 	Yellow = "\033[33m"
 	Reset  = "\033[0m"
+)
+
+type Mode struct {
+	pre  string
+	post string
+}
+
+var (
+	ANSI Mode = Mode{Yellow, Reset}
+	HTML Mode = Mode{`<span class="poem-diff">`, "</span>"}
 )
 
 func readLines(filename string) ([]string, error) {
@@ -76,7 +89,7 @@ func alignTokens(a, b string) [][2]string {
 	return aligned
 }
 
-func getRow(lineNum int, aLine, bLine string) (string, string, string) {
+func getRow(lineNum int, aLine, bLine string, b Mode) (string, string, string) {
 	leftBuilder, rightBuilder := strings.Builder{}, strings.Builder{}
 
 	aligned := alignTokens(aLine, bLine)
@@ -88,10 +101,10 @@ func getRow(lineNum int, aLine, bLine string) (string, string, string) {
 			rightBuilder.WriteString(right + " ")
 		} else {
 			if left != "" {
-				leftBuilder.WriteString(Yellow + left + Reset + " ")
+				leftBuilder.WriteString(b.pre + left + b.post + " ")
 			}
 			if right != "" {
-				rightBuilder.WriteString(Yellow + right + Reset + " ")
+				rightBuilder.WriteString(b.pre + right + b.post + " ")
 			}
 		}
 	}
@@ -100,7 +113,7 @@ func getRow(lineNum int, aLine, bLine string) (string, string, string) {
 }
 
 func main() {
-	if len(os.Args) != 3 {
+	if len(os.Args) < 3 {
 		fmt.Println("Usage: go run diff.go file1.txt file2.txt")
 		os.Exit(1)
 	}
@@ -119,14 +132,27 @@ func main() {
 	}
 
 	numsCol := []string{""}
-	leftCol := []string{Gray + os.Args[1] + Reset}
-	rightCol := []string{Gray + os.Args[2] + Reset}
+	leftCol := []string{mode.pre + os.Args[1] + mode.post}
+	rightCol := []string{mode.pre + os.Args[2] + mode.post}
 
 	for i := range len(lines1) {
-		num, left, right := getRow(i, lines1[i], lines2[i])
+		num, left, right := getRow(i, lines1[i], lines2[i], mode)
 		numsCol = append(numsCol, num)
 		leftCol = append(leftCol, left)
 		rightCol = append(rightCol, right)
+	}
+
+	switch mode {
+	case ANSI:
+		writeAnsi(numsCol, leftCol, rightCol)
+	case HTML:
+		writeHTML(leftCol, rightCol)
+	}
+}
+
+func writeAnsi(numsCol, leftCol, rightCol []string) {
+	for i := range numsCol {
+		fmt.Print(numsCol[i], "\t", leftCol[i], "\t", rightCol[i], "\n")
 	}
 
 	pad(numsCol)
@@ -135,6 +161,17 @@ func main() {
 
 	for i := range numsCol {
 		fmt.Print(Gray, numsCol[i], Reset, "\t", leftCol[i], "\t", rightCol[i], "\n")
+	}
+}
+
+func writeHTML(leftCol, rightCol []string) {
+	for _, col := range [][]string{leftCol, rightCol} {
+		fmt.Println(`<div style="white-space: pre-line">`)
+		col = col[1:] // remove header
+		for _, s := range col {
+			fmt.Println(s)
+		}
+		fmt.Println(`</div>`)
 	}
 }
 
